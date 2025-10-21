@@ -6,152 +6,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Unzip repo bundle
         run: |
-          test -f repo_bundle_vro_vroom.zip
-          unzip -o repo_bundle_vro_vroom.zip
-          # Après unzip, on doit avoir .github/, src/, public/, package.json, etc.
+          if [ -f repo_bundle_vro_vroom.zip ]; then
+            unzip -o repo_bundle_vro_vroom.zip
+          else
+            echo "❌ repo_bundle_vro_vroom.zip not found"
+            exit 1
+          fi
           ls -la
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - name: Install deps
-        run: npm ci
+      - name: Install dependencies
+        run: npm install
 
-      - name: Build (Vite)
+      - name: Build project
         run: npm run build
 
-      - name: Create WP theme and copy dist
-        shell: bash
+      - name: Create WordPress theme
         run: |
-          set -e
-          THEME="creativestudio_dynamic"
-          mkdir -p "$THEME"
+          mkdir -p creativestudio_dynamic
+          echo "/*
+          Theme Name: Creativestudio Dynamic
+          Author: falahismail07-oss
+          Description: WordPress theme generated from Lovable Vite project.
+          Version: 1.0
+          */" > creativestudio_dynamic/style.css
 
-          cat > "$THEME/style.css" <<'EOF'
-/*
-Theme Name: Creativestudio Dynamic
-Author: You
-Description: WordPress theme generated from a Lovable (Vite/React) project.
-Version: 1.0.0
-Text Domain: creativestudio-dynamic
-*/
-EOF
+          echo "<?php
+          add_action('wp_enqueue_scripts', function() {
+            wp_enqueue_style('csd-style', get_stylesheet_uri());
+          });
+          ?>" > creativestudio_dynamic/functions.php
 
-          cat > "$THEME/functions.php" <<'EOF'
-<?php
-add_action('after_setup_theme', function () {
-  add_theme_support('title-tag');
-  add_theme_support('post-thumbnails');
-  add_theme_support('html5', ['style','script','gallery','caption','search-form']);
-  add_theme_support('responsive-embeds');
-  register_nav_menus(['primary' => __('Primary Menu','creativestudio-dynamic')]);
-});
-function csd_enqueue_dir($url, $path) {
-  if (!is_dir($path)) return;
-  foreach (glob($path.'/*.css') as $css) {
-    $h='csd-'.md5($css); wp_enqueue_style($h, $url.'/'.basename($css), [], filemtime($css));
-  }
-  foreach (glob($path.'/*.js') as $js) {
-    $h='csd-'.md5($js); wp_enqueue_script($h, $url.'/'.basename($js), [], filemtime($js), true);
-    wp_script_add_data($h,'type','module');
-  }
-}
-add_action('wp_enqueue_scripts', function () {
-  wp_enqueue_style('csd-style', get_stylesheet_uri(), [], filemtime(get_stylesheet_directory().'/style.css'));
-  $u=get_stylesheet_directory_uri(); $p=get_stylesheet_directory();
-  $dist_p=$p.'/dist'; $dist_u=$u.'/dist';
-  $assets_p=$p.'/assets'; $assets_u=$u.'/assets';
-  if (is_dir($dist_p)) {
-    csd_enqueue_dir($dist_u,$dist_p);
-    if (is_dir($dist_p.'/assets')) {
-      foreach (glob($dist_p.'/assets/*.css') as $css) {
-        $h='csd-'.md5($css); wp_enqueue_style($h, $dist_u.'/assets/'.basename($css), [], filemtime($css));
-      }
-      foreach (glob($dist_p.'/assets/*.js') as $js) {
-        $h='csd-'.md5($js); wp_enqueue_script($h, $dist_u.'/assets/'.basename($js), [], filemtime($js), true);
-        wp_script_add_data($h,'type','module');
-      }
-    }
-  } elseif (is_dir($assets_p)) {
-    csd_enqueue_dir($assets_u,$assets_p);
-  }
-});
-EOF
-
-          cat > "$THEME/header.php" <<'EOF'
-<?php ?><!doctype html>
-<html <?php language_attributes(); ?>>
-<head>
-  <meta charset="<?php bloginfo('charset'); ?>">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <?php wp_head(); ?>
-</head>
-<body <?php body_class(); ?>>
-<header class="site-header">
-  <nav aria-label="<?php esc_attr_e('Primary Menu','creativestudio-dynamic'); ?>">
-    <?php wp_nav_menu(['theme_location'=>'primary','container'=>false,'menu_class'=>'menu','fallback_cb'=>'__return_false']); ?>
-  </nav>
-</header>
-<main id="content">
-EOF
-
-          cat > "$THEME/footer.php" <<'EOF'
-<?php ?></main>
-<footer class="site-footer">
-  <p>&copy; <?php echo date('Y'); ?> Creativestudio Dynamic</p>
-</footer>
-<?php wp_footer(); ?>
-</body>
-</html>
-EOF
-
-          cat > "$THEME/index.php" <<'EOF'
-<?php get_header(); ?>
-<section class="container">
-  <?php if (have_posts()) : while (have_posts()) : the_post(); ?>
-    <article <?php post_class(); ?>>
-      <h1 class="entry-title"><?php the_title(); ?></h1>
-      <div class="entry-content"><?php the_content(); ?></div>
-    </article>
-  <?php endwhile; else : ?>
-    <article class="no-content">
-      <h1><?php esc_html_e('Nothing here yet','creativestudio-dynamic'); ?></h1>
-      <p><?php esc_html_e('Set a static front page in Settings > Reading, and the Lovable build under /dist will render.','creativestudio-dynamic'); ?></p>
-    </article>
-  <?php endif; ?>
-</section>
-<?php get_footer(); ?>
-EOF
-
-          cat > "$THEME/front-page.php" <<'EOF'
-<?php /* Front Page */ get_header(); ?>
-<div id="root"><!-- React/Vite app mounts here --></div>
-<?php if (have_posts()) : while (have_posts()) : the_post(); ?>
-  <article <?php post_class('frontpage-content'); ?>>
-    <div class="entry-content"><?php the_content(); ?></div>
-  </article>
-<?php endwhile; endif; ?>
-<?php get_footer(); ?>
-EOF
-
-          touch "$THEME/screenshot.png"
-
-          mkdir -p "$THEME/dist"
-          cp -R dist/* "$THEME/dist/" || { echo "No dist/ found"; exit 1; }
-
-          zip -r creativestudio_dynamic_theme.zip "$THEME"
-
-      - name: Upload theme ZIP
-        uses: actions/upload-artifact@v4
-        with:
-          name: creativestudio_dynamic_theme
-          path: creativestudio_dynamic_theme.zip
+          echo "<?php get_header(); ?><div id='root'></div><?php get_footer(); ?>"
