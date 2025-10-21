@@ -1,0 +1,166 @@
+
+name: Build Lovable and Package WordPress Theme
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Vite)
+        run: npm run build
+
+      - name: Prepare WordPress theme scaffold
+        run: |
+          THEME=creativestudio_dynamic
+          mkdir -p $THEME
+          cat > $THEME/style.css <<'EOF'
+/*
+Theme Name: Creativestudio Dynamic
+Theme URI: https://preview--vro-auto-connect.lovable.app/
+Author: You
+Description: WordPress theme generated from a Lovable (Vite/React) project.
+Version: 1.0.0
+Requires at least: 6.0
+Tested up to: 6.6
+Requires PHP: 7.4
+License: GPL-2.0-or-later
+License URI: http://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: creativestudio-dynamic
+*/
+EOF
+          cat > $THEME/functions.php <<'EOF'
+<?php
+add_action('after_setup_theme', function () {
+  add_theme_support('title-tag');
+  add_theme_support('post-thumbnails');
+  add_theme_support('html5', ['style','script','gallery','caption','search-form']);
+  add_theme_support('responsive-embeds');
+  register_nav_menus(['primary' => __('Primary Menu','creativestudio-dynamic')]);
+});
+function csd_enqueue_dir($url, $path) {
+  if (!is_dir($path)) return;
+  foreach (glob($path.'/*.css') as $css) {
+    $h='csd-'.md5($css); wp_enqueue_style($h, $url.'/'.basename($css), [], filemtime($css));
+  }
+  foreach (glob($path.'/*.js') as $js) {
+    $h='csd-'.md5($js); wp_enqueue_script($h, $url.'/'.basename($js), [], filemtime($js), true);
+    wp_script_add_data($h,'type','module');
+  }
+}
+add_action('wp_enqueue_scripts', function () {
+  wp_enqueue_style('csd-style', get_stylesheet_uri(), [], filemtime(get_stylesheet_directory().'/style.css'));
+  $u=get_stylesheet_directory_uri(); $p=get_stylesheet_directory();
+  $dist_p=$p.'/dist'; $dist_u=$u.'/dist';
+  $assets_p=$p.'/assets'; $assets_u=$u.'/assets';
+  if (is_dir($dist_p)) {
+    csd_enqueue_dir($dist_u,$dist_p);
+    if (is_dir($dist_p.'/assets')) {
+      foreach (glob($dist_p.'/assets/*.css') as $css) {
+        $h='csd-'.md5($css); wp_enqueue_style($h, $dist_u.'/assets/'.basename($css), [], filemtime($css));
+      }
+      foreach (glob($dist_p.'/assets/*.js') as $js) {
+        $h='csd-'.md5($js); wp_enqueue_script($h, $dist_u.'/assets/'.basename($js), [], filemtime($js), true);
+        wp_script_add_data($h,'type','module');
+      }
+    }
+  } elseif (is_dir($assets_p)) {
+    csd_enqueue_dir($assets_u,$assets_p);
+  }
+});
+add_action('widgets_init', function () {
+  register_sidebar([ 'name'=>__('Sidebar','creativestudio-dynamic'),'id'=>'sidebar-1',
+    'before_widget'=>'<section class="widget %2$s" id="%1$s">','after_widget'=>'</section>',
+    'before_title'=>'<h2 class="widget-title">','after_title'=>'</h2>', ]);
+});
+EOF
+          cat > $THEME/header.php <<'EOF'
+<?php ?><!doctype html>
+<html <?php language_attributes(); ?>>
+<head>
+  <meta charset="<?php bloginfo('charset'); ?>">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?php wp_head(); ?>
+</head>
+<body <?php body_class(); ?>>
+<header class="site-header">
+  <nav aria-label="<?php esc_attr_e('Primary Menu','creativestudio-dynamic'); ?>">
+    <?php wp_nav_menu(['theme_location'=>'primary','container'=>false,'menu_class'=>'menu','fallback_cb'=>'__return_false']); ?>
+  </nav>
+</header>
+<main id="content">
+EOF
+          cat > $THEME/footer.php <<'EOF'
+<?php ?></main>
+<footer class="site-footer">
+  <p>&copy; <?php echo date('Y'); ?> Creativestudio Dynamic</p>
+</footer>
+<?php wp_footer(); ?>
+</body>
+</html>
+EOF
+          cat > $THEME/index.php <<'EOF'
+<?php get_header(); ?>
+<section class="container">
+  <?php if (have_posts()) : while (have_posts()) : the_post(); ?>
+    <article <?php post_class(); ?>>
+      <h1 class="entry-title"><?php the_title(); ?></h1>
+      <div class="entry-content"><?php the_content(); ?></div>
+    </article>
+  <?php endwhile; else : ?>
+    <article class="no-content">
+      <h1><?php esc_html_e('Nothing here yet','creativestudio-dynamic'); ?></h1>
+      <p><?php esc_html_e('Set a static front page in Settings > Reading, and the Lovable build under /dist will render.','creativestudio-dynamic'); ?></p>
+    </article>
+  <?php endif; ?>
+</section>
+<?php get_footer(); ?>
+EOF
+          cat > $THEME/front-page.php <<'EOF'
+<?php /* Front Page */ get_header(); ?>
+<div id="root"><!-- React/Vite app mounts here --></div>
+<?php if (have_posts()) : while (have_posts()) : the_post(); ?>
+  <article <?php post_class('frontpage-content'); ?>>
+    <div class="entry-content"><?php the_content(); ?></div>
+  </article>
+<?php endwhile; endif; ?>
+<?php get_footer(); ?>
+EOF
+          touch $THEME/screenshot.png
+
+      - name: Copy Vite build into theme /dist
+        run: |
+          THEME=creativestudio_dynamic
+          mkdir -p $THEME/dist
+          if [ -d "./dist" ]; then
+            cp -R ./dist/* $THEME/dist/
+          elif [ -d "./build" ]; then
+            cp -R ./build/* $THEME/dist/
+          else
+            echo "No dist/ or build/ found. Did the build succeed?" && exit 1
+          fi
+
+      - name: Zip the theme
+        run: zip -r creativestudio_dynamic_theme.zip creativestudio_dynamic
+
+      - name: Upload theme ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: creativestudio_dynamic_theme
+          path: creativestudio_dynamic_theme.zip
+          if-no-files-found: error
