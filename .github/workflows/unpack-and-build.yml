@@ -1,0 +1,132 @@
+name: Unpack Bundle, Build, and Package WP Theme
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip repo bundle
+        run: |
+          if [ -f repo_bundle_vro_vroom.zip ]; then
+            unzip -o repo_bundle_vro_vroom.zip
+          else
+            echo "repo_bundle_vro_vroom.zip not found" && exit 1
+          fi
+          ls -la
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Vite)
+        run: npm run build
+
+      - name: Create WordPress theme and copy dist
+        shell: bash
+        run: |
+          set -e
+          THEME="creativestudio_dynamic"
+          mkdir -p "$THEME"
+
+          cat > "$THEME/style.css" <<'EOF'
+/*
+Theme Name: Creativestudio Dynamic
+Author: You
+Description: WordPress theme generated from a Lovable Vite project.
+Version: 1.0.0
+Text Domain: creativestudio-dynamic
+*/
+EOF
+
+          cat > "$THEME/functions.php" <<'EOF'
+<?php
+add_action('after_setup_theme', function () {
+  add_theme_support('title-tag');
+  add_theme_support('post-thumbnails');
+  add_theme_support('html5', ['style','script','gallery','caption','search-form']);
+  add_theme_support('responsive-embeds');
+  register_nav_menus(['primary' => __('Primary Menu','creativestudio-dynamic')]);
+});
+function csd_enqueue_dir($url, $path) {
+  if (!is_dir($path)) return;
+  foreach (glob($path.'/*.css') as $css) {
+    $h='csd-'.md5($css); wp_enqueue_style($h, $url.'/'.basename($css), [], filemtime($css));
+  }
+  foreach (glob($path.'/*.js') as $js) {
+    $h='csd-'.md5($js); wp_enqueue_script($h, $url.'/'.basename($js), [], filemtime($js), true);
+    wp_script_add_data($h,'type','module');
+  }
+}
+add_action('wp_enqueue_scripts', function () {
+  wp_enqueue_style('csd-style', get_stylesheet_uri(), [], filemtime(get_stylesheet_directory().'/style.css'));
+  $u=get_stylesheet_directory_uri(); $p=get_stylesheet_directory();
+  $dist_p=$p.'/dist'; $dist_u=$u.'/dist';
+  if (is_dir($dist_p)) {
+    csd_enqueue_dir($dist_u,$dist_p);
+    if (is_dir($dist_p.'/assets')) {
+      foreach (glob($dist_p.'/assets/*.css') as $css) {
+        $h='csd-'.md5($css); wp_enqueue_style($h, $dist_u.'/assets/'.basename($css), [], filemtime($css));
+      }
+      foreach (glob($dist_p.'/assets/*.js') as $js) {
+        $h='csd-'.md5($js); wp_enqueue_script($h, $dist_u.'/assets/'.basename($js), [], filemtime($js), true);
+        wp_script_add_data($h,'type','module');
+      }
+    }
+  }
+});
+EOF
+
+          cat > "$THEME/header.php" <<'EOF'
+<?php ?><!doctype html>
+<html <?php language_attributes(); ?>>
+<head>
+  <meta charset="<?php bloginfo('charset'); ?>">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <?php wp_head(); ?>
+</head>
+<body <?php body_class(); ?>>
+<header class="site-header">
+  <nav aria-label="<?php esc_attr_e('Primary Menu','creativestudio-dynamic'); ?>">
+    <?php wp_nav_menu(['theme_location'=>'primary','container'=>false,'menu_class'=>'menu','fallback_cb'=>'__return_false']); ?>
+  </nav>
+</header>
+<main id="content">
+EOF
+
+          cat > "$THEME/footer.php" <<'EOF'
+<?php ?></main>
+<footer class="site-footer">
+  <p>&copy; <?php echo date('Y'); ?> Creativestudio Dynamic</p>
+</footer>
+<?php wp_footer(); ?>
+</body>
+</html>
+EOF
+
+          cat > "$THEME/index.php" <<'EOF'
+<?php get_header(); ?>
+<div id="root"></div>
+<?php get_footer(); ?>
+EOF
+
+          mkdir -p "$THEME/dist"
+          cp -R dist/* "$THEME/dist/" || { echo "No dist/ found"; exit 1; }
+
+          zip -r creativestudio_dynamic_theme.zip "$THEME"
+
+      - name: Upload theme ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: creativestudio_dynamic_theme
+          path: creativestudio_dynamic_theme.zip
