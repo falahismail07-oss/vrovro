@@ -1,62 +1,13 @@
-name: Unpack Bundle, Build, and Package WP Theme
+name: Test YAML only
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Unzip repo bundle
-        run: |
-          if [ -f repo_bundle_vro_vroom.zip ]; then
-            unzip -o repo_bundle_vro_vroom.zip
-          else
-            echo "❌ repo_bundle_vro_vroom.zip not found"
-            exit 1
-          fi
-          ls -la
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build project
-        run: npm run build
-
-      - name: Create WordPress theme
-        run: |
-          mkdir -p creativestudio_dynamic
-          echo "/*
-          Theme Name: Creativestudio Dynamic
-          Author: falahismail07-oss
-          Description: WordPress theme generated from Lovable Vite project.
-          Version: 1.0
-          */" > creativestudio_dynamic/style.css
-
-          echo "<?php
-          add_action('wp_enqueue_scripts', function() {
-            wp_enqueue_style('csd-style', get_stylesheet_uri());
-          });
-          ?>" > creativestudio_dynamic/functions.php
-
-          echo "<?php get_header(); ?><div id='root'></div><?php get_footer(); ?>" > creativestudio_dynamic/index.php
-
-          mkdir -p creativestudio_dynamic/dist
-          cp -r dist/* creativestudio_dynamic/dist/ || echo 'No dist folder yet.'
-
-          zip -r creativestudio_dynamic_theme.zip creativestudio_dynamic
-
-      - name: Upload theme artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: creativestudio_dynamic_theme
-          path: creativestudio_dynamic_theme.zip
+      - name: Show files
+        run: ls -la
