@@ -48,4 +48,15 @@ jobs:
           });
           ?>" > creativestudio_dynamic/functions.php
 
-          echo "<?php get_header(); ?><div id='root'></div><?php get_footer(); ?>"
+          echo "<?php get_header(); ?><div id='root'></div><?php get_footer(); ?>" > creativestudio_dynamic/index.php
+
+          mkdir -p creativestudio_dynamic/dist
+          cp -r dist/* creativestudio_dynamic/dist/ || echo 'No dist folder yet.'
+
+          zip -r creativestudio_dynamic_theme.zip creativestudio_dynamic
+
+      - name: Upload theme artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: creativestudio_dynamic_theme
+          path: creativestudio_dynamic_theme.zip
